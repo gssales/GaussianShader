@@ -68,6 +68,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         if iteration % 1000 == 0:
             gaussians.oneupSHdegree()
 
+        if iteration > 20000 and iteration % 1000 == 0:
+            gaussians.oneupBRDFdim()
+
         # Pick a random Camera
         if not viewpoint_stack:
             viewpoint_stack = scene.getTrainCameras().copy()

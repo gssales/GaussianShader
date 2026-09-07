@@ -49,7 +49,8 @@ class GaussianModel:
         self.xyz_gradient_accum = torch.empty(0)
 
         # brdf setting
-        self.brdf_dim = brdf_dim  
+        self.brdf_dim = 0
+        self.max_brdf_dim = brdf_dim
         self.brdf_mode = brdf_mode  
         self.brdf_envmap_res = brdf_envmap_res  
         self._normal = torch.empty(0)
@@ -145,6 +146,10 @@ class GaussianModel:
     def oneupSHdegree(self):
         if self.active_sh_degree < self.max_sh_degree:
             self.active_sh_degree += 1
+            
+    def oneupBRDFdim(self):
+        if self.active_brdf_dim < self.max_brdf_dim:
+            self.active_brdf_dim += 1
 
     def create_from_pcd(self, pcd : BasicPointCloud, spatial_lr_scale : float):
         self.spatial_lr_scale = 5
@@ -154,17 +159,17 @@ class GaussianModel:
             features = torch.zeros((fused_color.shape[0], 3, (self.max_sh_degree + 1) ** 2)).float().cuda()
             features[:, :3, 0 ] = fused_color
             features[:, 3:, 1:] = 0.0
-        elif (self.brdf_mode=="envmap" and self.brdf_dim==0):
+        elif (self.brdf_mode=="envmap" and self.max_brdf_dim==0):
             fused_color = torch.tensor(np.asarray(pcd.colors)).float().cuda()
-            features = torch.zeros((fused_color.shape[0], self.brdf_dim + 3)).float().cuda()
+            features = torch.zeros((fused_color.shape[0], self.max_brdf_dim + 3)).float().cuda()
             features[:, :3 ] = fused_color
             features[:, 3: ] = 0.0
-        elif self.brdf_mode=="envmap" and self.brdf_dim>0:
+        elif self.brdf_mode=="envmap" and self.max_brdf_dim>0:
             fused_color = torch.tensor(np.asarray(pcd.colors)).float().cuda()
             features = torch.zeros((fused_color.shape[0], 3)).float().cuda()
             features[:, :3 ] = fused_color
             features[:, 3: ] = 0.0
-            features_rest = torch.zeros((fused_color.shape[0], 3, (self.brdf_dim + 1) ** 2)).float().cuda()
+            features_rest = torch.zeros((fused_color.shape[0], 3, (self.max_brdf_dim + 1) ** 2)).float().cuda()
         else:
             raise NotImplementedError
 
@@ -183,7 +188,7 @@ class GaussianModel:
             self._features_rest = nn.Parameter(features[:,:,1:].transpose(1, 2).contiguous().requires_grad_(True))
         else:
             self._features_dc = nn.Parameter(features[:,:3].contiguous().requires_grad_(True))
-            if (self.brdf_mode=="envmap" and self.brdf_dim==0):
+            if (self.brdf_mode=="envmap" and self.max_brdf_dim==0):
                 self._features_rest = nn.Parameter(features[:,3:].contiguous().requires_grad_(True))
             elif self.brdf_mode=="envmap":
                 self._features_rest = nn.Parameter(features_rest.contiguous().requires_grad_(True))
@@ -292,7 +297,7 @@ class GaussianModel:
                 l.append('f_dc_{}'.format(i))
             if viewer_fmt:
                 features_rest_len = 45
-            elif (self.brdf_mode=="envmap" and self.brdf_dim==0):
+            elif (self.brdf_mode=="envmap" and self.max_brdf_dim==0):
                 features_rest_len = self._features_rest.shape[1]
             elif self.brdf_mode=="envmap":
                 features_rest_len = self._features_rest.shape[1]*self._features_rest.shape[2]
@@ -316,7 +321,7 @@ class GaussianModel:
         normals = np.zeros_like(xyz) if not self.brdf else self._normal.detach().cpu().numpy()
         normals2 = self._normal2.detach().cpu().numpy() if (self.brdf) else np.zeros_like(xyz)
         f_dc = self._features_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy() if not self.brdf else self._features_dc.detach().cpu().numpy()
-        f_rest = self._features_rest.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy() if not ((self.brdf and self.brdf_mode=="envmap" and self.brdf_dim==0)) else self._features_rest.detach().cpu().numpy()
+        f_rest = self._features_rest.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy() if not ((self.brdf and self.brdf_mode=="envmap" and self.max_brdf_dim==0)) else self._features_rest.detach().cpu().numpy()
         opacities = self._opacity.detach().cpu().numpy()
         scale = self._scaling.detach().cpu().numpy()
         rotation = self._rotation.detach().cpu().numpy()
@@ -379,17 +384,17 @@ class GaussianModel:
             # Reshape (P,F*SH_coeffs) to (P, F, SH_coeffs except DC)
             features_extra = features_extra.reshape((features_extra.shape[0], 3, (self.max_sh_degree + 1) ** 2 - 1))
         elif self.brdf_mode=="envmap":
-            features_extra = np.zeros((xyz.shape[0], 3*(self.brdf_dim + 1) ** 2 ))
-            if len(extra_f_names)==3*(self.brdf_dim + 1) ** 2:
+            features_extra = np.zeros((xyz.shape[0], 3*(self.max_brdf_dim + 1) ** 2 ))
+            if len(extra_f_names)==3*(self.max_brdf_dim + 1) ** 2:
                 for idx, attr_name in enumerate(extra_f_names):
                     features_extra[:, idx] = np.asarray(plydata.elements[0][attr_name])
-                features_extra = features_extra.reshape((features_extra.shape[0], (self.brdf_dim + 1) ** 2, 3))
+                features_extra = features_extra.reshape((features_extra.shape[0], (self.max_brdf_dim + 1) ** 2, 3))
                 features_extra = features_extra.swapaxes(1,2)
             else:
                 print(f"NO INITIAL SH FEATURES FOUND!!! USE ZERO SH AS INITIALIZE.")
-                features_extra = features_extra.reshape((features_extra.shape[0], 3, (self.brdf_dim + 1) ** 2))
+                features_extra = features_extra.reshape((features_extra.shape[0], 3, (self.max_brdf_dim + 1) ** 2))
         else:
-            assert len(extra_f_names)==self.brdf_dim
+            assert len(extra_f_names)==self.max_brdf_dim
             features_extra = np.zeros((xyz.shape[0], len(extra_f_names)))
             for idx, attr_name in enumerate(extra_f_names):
                 features_extra[:, idx] = np.asarray(plydata.elements[0][attr_name])
@@ -566,7 +571,7 @@ class GaussianModel:
         new_scaling = self.scaling_inverse_activation(self.get_scaling[selected_pts_mask].repeat(N,1) / (0.8*N))
         new_rotation = self._rotation[selected_pts_mask].repeat(N,1)
         new_features_dc = self._features_dc[selected_pts_mask].repeat(N,1,1) if not self.brdf else self._features_dc[selected_pts_mask].repeat(N,1)
-        new_features_rest = self._features_rest[selected_pts_mask].repeat(N,1,1) if not ((self.brdf and self.brdf_mode=="envmap" and self.brdf_dim==0)) else self._features_rest[selected_pts_mask].repeat(N,1)
+        new_features_rest = self._features_rest[selected_pts_mask].repeat(N,1,1) if not ((self.brdf and self.brdf_mode=="envmap" and self.max_brdf_dim==0)) else self._features_rest[selected_pts_mask].repeat(N,1)
         new_opacity = self._opacity[selected_pts_mask].repeat(N,1)
         new_roughness = self._roughness[selected_pts_mask].repeat(N,1) if self.brdf else None
         new_specular = self._specular[selected_pts_mask].repeat(N,1) if self.brdf else None
