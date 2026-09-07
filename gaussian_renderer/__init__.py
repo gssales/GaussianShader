@@ -142,7 +142,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
                 specular_color = brdf_pkg['specular'].squeeze() # (N, 3) 
 
                 if pc.brdf_dim>0:
-                    shs_view = pc.get_brdf_features.view(-1, 3, (pc.brdf_dim+1)**2)
+                    shs_view = pc.get_brdf_features.view(-1, 3, (pc.max_brdf_dim+1)**2)
                     dir_pp = (pc.get_xyz - viewpoint_camera.camera_center.repeat(pc.get_opacity.shape[0], 1))
                     dir_pp_normalized = dir_pp/dir_pp.norm(dim=1, keepdim=True)
                     sh2rgb = eval_sh(pc.brdf_dim, shs_view, dir_pp_normalized)
