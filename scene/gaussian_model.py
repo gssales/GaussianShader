@@ -148,8 +148,8 @@ class GaussianModel:
             self.active_sh_degree += 1
             
     def oneupBRDFdim(self):
-        if self.active_brdf_dim < self.max_brdf_dim:
-            self.active_brdf_dim += 1
+        if self.brdf_dim < self.max_brdf_dim:
+            self.brdf_dim += 1
 
     def create_from_pcd(self, pcd : BasicPointCloud, spatial_lr_scale : float):
         self.spatial_lr_scale = 5
