@@ -264,5 +264,6 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             "visibility_filter" : radii > 0,
             "radii": radii, 
     }
-    out.update(out_extras)
+    if not speed:
+        out.update(out_extras)
     return out
