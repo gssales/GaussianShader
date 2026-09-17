@@ -35,37 +35,48 @@ def render_lightings(model_path, name, iteration, gaussians, sample_num):
         torchvision.utils.save_image(lighting, os.path.join(lighting_path, '{0:05d}'.format(sampled_index) + ".png"))
         save_image_raw(os.path.join(lighting_path, '{0:05d}'.format(sampled_index) + ".hdr"), lighting.permute(1,2,0).detach().cpu().numpy())
 
-def render_set(model_path, name, iteration, views, gaussians, pipeline, background):
+def render_set(model_path, name, iteration, views, gaussians, pipeline, background, save_extra=False, save_normals=False):
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
 
     makedirs(render_path, exist_ok=True)
     makedirs(gts_path, exist_ok=True)
+    if save_normals:
+        normals_path = os.path.join(model_path, name, "ours_{}".format(iteration), "normals")
+        makedirs(normals_path, exist_ok=True)
 
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
         torch.cuda.synchronize()
-
         render_pkg = render(view, gaussians, pipeline, background, debug=True)
-
         torch.cuda.synchronize()
-
         gt = view.original_image[0:3, :, :]
+
         torchvision.utils.save_image(render_pkg["render"], os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
         torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
-        for k in render_pkg.keys():
-            if render_pkg[k].dim()<3 or k=="render" or k=="delta_normal_norm":
-                continue
-            save_path = os.path.join(model_path, name, "ours_{}".format(iteration), k)
-            makedirs(save_path, exist_ok=True)
-            if k == "alpha":
-                render_pkg[k] = apply_depth_colormap(render_pkg["alpha"][0][...,None], min=0., max=1.).permute(2,0,1)
-            if k == "depth":
-                render_pkg[k] = apply_depth_colormap(-render_pkg["depth"][0][...,None]).permute(2,0,1)
-            elif "normal" in k:
-                render_pkg[k] = 0.5 + (0.5*render_pkg[k])
-            torchvision.utils.save_image(render_pkg[k], os.path.join(save_path, '{0:05d}'.format(idx) + ".png"))
 
-def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool):
+        if save_normals:
+            normal = render_pkg.get("normal", None)
+            if normal is not None:
+                normal = 0.5 + (0.5 * normal)
+                torchvision.utils.save_image(normal, os.path.join(normals_path, '{0:05d}'.format(idx) + ".png"))
+
+        if save_extra:
+            for k in render_pkg.keys():
+                if render_pkg[k].dim()<3 or k=="render" or k=="delta_normal_norm":
+                    continue
+                save_path = os.path.join(model_path, name, "ours_{}".format(iteration), k)
+                makedirs(save_path, exist_ok=True)
+                if k == "alpha":
+                    render_pkg[k] = apply_depth_colormap(render_pkg["alpha"][0][...,None], min=0., max=1.).permute(2,0,1)
+                if k == "depth":
+                    render_pkg[k] = apply_depth_colormap(-render_pkg["depth"][0][...,None]).permute(2,0,1)
+                elif "normal" in k:
+                    render_pkg[k] = 0.5 + (0.5*render_pkg[k])
+                torchvision.utils.save_image(render_pkg[k], os.path.join(save_path, '{0:05d}'.format(idx) + ".png"))
+
+def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, 
+                save_extra : bool = False,
+                save_normals : bool = False):
     with torch.no_grad():
         gaussians = GaussianModel(dataset.sh_degree, dataset.brdf_dim, pipeline.brdf_mode, dataset.brdf_envmap_res)
         scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
@@ -74,11 +85,10 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
         if not skip_train:
-             render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background)
+             render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background, save_extra=save_extra, save_normals=save_normals)
 
         if not skip_test:
-             render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background)
-
+             render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background, save_extra=save_extra, save_normals=save_normals)
         if pipeline.brdf:
              render_lightings(dataset.model_path, "lighting", scene.loaded_iter, gaussians, sample_num=1)
              
@@ -90,6 +100,8 @@ if __name__ == "__main__":
     parser.add_argument("--iteration", default=-1, type=int)
     parser.add_argument("--skip_train", action="store_true")
     parser.add_argument("--skip_test", action="store_true")
+    parser.add_argument("--save_extra", action="store_true")
+    parser.add_argument("--save_normals", action="store_true")
     parser.add_argument("--quiet", action="store_true")
     args = get_combined_args(parser)
     print("Rendering " + args.model_path)
@@ -97,4 +109,4 @@ if __name__ == "__main__":
     # Initialize system state (RNG)
     safe_state(args.quiet)
 
-    render_sets(model.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test)
+    render_sets(model.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test, save_extra=args.save_extra, save_normals=args.save_normals)
