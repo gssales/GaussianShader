@@ -218,6 +218,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         for k in["normal", "normal_axis"] if debug else ["normal"]:
             if k in out_extras.keys():
                 out_extras[k] = (out_extras[k] - 0.5) * 2. # range (0, 1) -> (-1, 1)
+                out_extras[k] = out_extras[k] / (torch.norm(out_extras[k], dim=-1, keepdim=True)+1e-6)
 
         # Rasterize visible Gaussians to alpha mask image. 
         raster_settings_alpha = GaussianRasterizationSettings(

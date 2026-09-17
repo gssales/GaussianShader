@@ -45,6 +45,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
     viewpoint_stack = None
     ema_loss_for_log = 0.0
+    ema_normal_loss_for_log = 0.0
     progress_bar = tqdm(range(opt.iterations), desc="Training progress")
     for iteration in range(1, opt.iterations + 1): 
         if network_gui.conn == None:
@@ -107,8 +108,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         with torch.no_grad():
             # Progress bar
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
+            ema_normal_loss_for_log = 0.4 * losses_extra['predicted_normal'].item() + 0.6 * ema_normal_loss_for_log if 'predicted_normal' in losses_extra.keys() else 0.0
             if iteration % 10 == 0:
-                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
+                progress_bar.set_postfix({
+                    "Loss": f"{ema_loss_for_log:.{7}f}",
+                    "N": f"{ema_normal_loss_for_log:.{7}f}" if 'predicted_normal' in losses_extra.keys() else "N/A"
+                })
                 progress_bar.update(10)
             if iteration == opt.iterations:
                 progress_bar.close()
